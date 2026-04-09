@@ -1,9 +1,13 @@
 const mongoose = require("mongoose");
 
-const userSchema = new mongoose.Schema({
-  email: String,
-  password: String,
-  city: String
+const ReelSchema = new mongoose.Schema({
+  userId: { type: String, required: true },
+  city: { type: String },
+  videoUrl: { type: String, required: true },
+  businessName: { type: String, required: true },
+  website: { type: String },
+  category: { type: String, default: "all" },
+  createdAt: { type: Date, default: Date.now }
 });
 
-module.exports = mongoose.model("User", userSchema);
+module.exports = mongoose.model("Reel", ReelSchema);

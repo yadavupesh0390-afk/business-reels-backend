@@ -6,9 +6,12 @@ const jwt = require("jsonwebtoken");
 // 🔹 Upload reel
 router.post("/upload", async (req, res) => {
   try {
-    const token = req.headers.authorization;
-    if(!token) return res.status(401).json({ error: "Unauthorized" });
+    const authHeader = req.headers.authorization;
+    if(!authHeader) return res.status(401).json({ error: "Unauthorized" });
 
+    // 🔹 Bearer token support
+    const token = authHeader.startsWith("Bearer ") ? authHeader.split(" ")[1] : authHeader;
+    
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     
     const { videoUrl, businessName, website, category } = req.body;

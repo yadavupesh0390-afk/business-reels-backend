@@ -2,20 +2,45 @@ const express = require("express");
 const router = express.Router();
 const Reel = require("../models/Reel");
 const jwt = require("jsonwebtoken");
+const multer = require("multer");
+const path = require("path");
+
+// ================== MULTER CONFIG ==================
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, "uploads/");
+  },
+  filename: function (req, file, cb) {
+    cb(null, Date.now() + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({ storage });
+
 
 // ================== UPLOAD REEL ==================
-router.post("/upload", async (req, res) => {
+router.post("/upload", upload.single("video"), async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
-    if(!authHeader) return res.status(401).json({ error: "Unauthorized ❌" });
+    if (!authHeader) {
+      return res.status(401).json({ error: "Unauthorized ❌" });
+    }
 
-    const token = authHeader.startsWith("Bearer ") ? authHeader.split(" ")[1] : authHeader;
+    const token = authHeader.startsWith("Bearer ")
+      ? authHeader.split(" ")[1]
+      : authHeader;
+
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // ✅ whatsapp add
-    const { videoUrl, businessName, website, category, whatsapp } = req.body;
+    const { businessName, website, category, whatsapp } = req.body;
 
-    if(!videoUrl || !businessName){
+    // 🔥 AUTO VIDEO URL
+    let videoUrl = "";
+    if (req.file) {
+      videoUrl = `${req.protocol}://${req.get("host")}/uploads/${req.file.filename}`;
+    }
+
+    if (!videoUrl || !businessName) {
       return res.status(400).json({ error: "Missing fields ❌" });
     }
 
@@ -26,13 +51,17 @@ router.post("/upload", async (req, res) => {
       businessName,
       website,
       category,
-      whatsapp, // ✅ NEW FIELD
-      whatsappClicks: 0, // optional
-      websiteClicks: 0   // optional
+      whatsapp,
+      whatsappClicks: 0,
+      websiteClicks: 0
     });
 
     await newReel.save();
-    res.json({ message: "Reel uploaded ✅" });
+
+    res.json({
+      message: "Reel uploaded successfully ✅",
+      videoUrl
+    });
 
   } catch (err) {
     console.error(err);
@@ -47,12 +76,14 @@ router.get("/", async (req, res) => {
     const { category, city } = req.query;
     const filter = {};
 
-    if(category && category !== "all") filter.category = category;
-    if(city) filter.city = city;
+    if (category && category !== "all") filter.category = category;
+    if (city) filter.city = city;
 
     const reels = await Reel.find(filter).sort({ createdAt: -1 });
+
     res.json(reels);
-  } catch(err) {
+
+  } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to fetch reels ❌" });
   }
@@ -60,35 +91,46 @@ router.get("/", async (req, res) => {
 
 
 // ================== WHATSAPP CLICK TRACK ==================
-router.post("/click/whatsapp/:id", async (req,res)=>{
-  try{
+router.post("/click/whatsapp/:id", async (req, res) => {
+  try {
     const reel = await Reel.findById(req.params.id);
-    if(!reel) return res.status(404).json({error:"Not found"});
+
+    if (!reel) {
+      return res.status(404).json({ error: "Reel not found ❌" });
+    }
 
     reel.whatsappClicks = (reel.whatsappClicks || 0) + 1;
+
     await reel.save();
 
-    res.json({success:true});
-  }catch(err){
-    res.status(500).json({error:"Error"});
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error updating WhatsApp clicks ❌" });
   }
 });
 
 
 // ================== WEBSITE CLICK TRACK ==================
-router.post("/click/website/:id", async (req,res)=>{
-  try{
+router.post("/click/website/:id", async (req, res) => {
+  try {
     const reel = await Reel.findById(req.params.id);
-    if(!reel) return res.status(404).json({error:"Not found"});
+
+    if (!reel) {
+      return res.status(404).json({ error: "Reel not found ❌" });
+    }
 
     reel.websiteClicks = (reel.websiteClicks || 0) + 1;
+
     await reel.save();
 
-    res.json({success:true});
-  }catch(err){
-    res.status(500).json({error:"Error"});
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error updating Website clicks ❌" });
   }
 });
-
 
 module.exports = router;

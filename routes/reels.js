@@ -6,17 +6,19 @@ const multer = require("multer");
 const path = require("path");
 
 // ================== MULTER CONFIG ==================
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, "uploads/");
-  },
-  filename: function (req, file, cb) {
-    cb(null, Date.now() + path.extname(file.originalname));
+const multer = require("multer");
+const { CloudinaryStorage } = require("multer-storage-cloudinary");
+const cloudinary = require("../config/cloudinary");
+
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: "reels",
+    resource_type: "video"
   }
 });
 
 const upload = multer({ storage });
-
 
 // ================== UPLOAD REEL ==================
 router.post("/upload", upload.single("video"), async (req, res) => {

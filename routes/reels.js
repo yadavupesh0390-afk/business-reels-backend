@@ -23,28 +23,16 @@ const upload = multer({ storage });
 // ================== UPLOAD REEL ==================
 router.post("/upload", upload.single("video"), async (req, res) => {
   try {
+
     const authHeader = req.headers.authorization;
-    if (!authHeader) {
-      return res.status(401).json({ error: "Unauthorized ❌" });
-    }
+    if(!authHeader) return res.status(401).json({ error: "Unauthorized ❌" });
 
-    const token = authHeader.startsWith("Bearer ")
-      ? authHeader.split(" ")[1]
-      : authHeader;
-
+    const token = authHeader.split(" ")[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     const { businessName, website, category, whatsapp } = req.body;
 
-    // 🔥 AUTO VIDEO URL
-    let videoUrl = "";
-    if (req.file) {
-      videoUrl = `${req.protocol}://${req.get("host")}/uploads/${req.file.filename}`;
-    }
-
-    if (!videoUrl || !businessName) {
-      return res.status(400).json({ error: "Missing fields ❌" });
-    }
+    const videoUrl = req.file.path; // 🔥 cloudinary URL
 
     const newReel = new Reel({
       userId: decoded.id,
@@ -53,17 +41,12 @@ router.post("/upload", upload.single("video"), async (req, res) => {
       businessName,
       website,
       category,
-      whatsapp,
-      whatsappClicks: 0,
-      websiteClicks: 0
+      whatsapp
     });
 
     await newReel.save();
 
-    res.json({
-      message: "Reel uploaded successfully ✅",
-      videoUrl
-    });
+    res.json({ message: "Uploaded to Cloudinary 🚀", videoUrl });
 
   } catch (err) {
     console.error(err);

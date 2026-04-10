@@ -1,3 +1,6 @@
 MONGO_URI=mongodb+srv://yadavupesh_db:MyStrongPassword@cluster0.sryvv5i.mongodb.net/businessReels?retryWrites=true&w=majority
 JWT_SECRET=SuperSecretKey123
 PORT=5000
+CLOUD_NAME=Root
+API_KEY=239883837765114
+API_SECRET=LcWWM2ivCEv6UgizWcGVoKnfffA

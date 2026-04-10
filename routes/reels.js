@@ -2,14 +2,20 @@ const express = require("express");
 const router = express.Router();
 const multer = require("multer");
 const fs = require("fs");
+const path = require("path");
 const Reel = require("../models/Reel");
 const jwt = require("jsonwebtoken");
 const cloudinary = require("../config/cloudinary");
 
-// ================== LOCAL UPLOAD TEMP ==================
-const upload = multer({ dest: "uploads/" });
+// ================== MULTER ==================
+const upload = multer({
+  dest: "uploads/",
+  limits: {
+    fileSize: 100 * 1024 * 1024 // 100MB limit
+  }
+});
 
-// ================== AUTH MIDDLEWARE ==================
+// ================== AUTH ==================
 const verifyToken = (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
@@ -26,9 +32,8 @@ const verifyToken = (req, res, next) => {
 
     req.user = decoded;
     next();
-
   } catch (err) {
-    console.error("JWT ERROR:", err);
+    console.log("JWT ERROR:", err.message);
     return res.status(401).json({ error: "Invalid token ❌" });
   }
 };
@@ -36,11 +41,12 @@ const verifyToken = (req, res, next) => {
 // ================== UPLOAD REEL ==================
 router.post("/upload", verifyToken, upload.single("video"), async (req, res) => {
   try {
-
-    console.log("FILE DEBUG:", req.file);
+    console.log("👉 HIT /upload");
+    console.log("FILE:", req.file);
+    console.log("BODY:", req.body);
 
     if (!req.file) {
-      return res.status(400).json({ error: "Video file missing ❌" });
+      return res.status(400).json({ error: "Video missing ❌" });
     }
 
     const { businessName, website, category, whatsapp } = req.body;
@@ -55,10 +61,12 @@ router.post("/upload", verifyToken, upload.single("video"), async (req, res) => 
       folder: "reels"
     });
 
+    console.log("CLOUDINARY DONE:", result.secure_url);
+
     // delete temp file
     fs.unlinkSync(req.file.path);
 
-    // ================== SAVE TO DB ==================
+    // ================== SAVE DB ==================
     const reel = new Reel({
       userId: req.user.id,
       city: req.user.city || "",
@@ -68,19 +76,23 @@ router.post("/upload", verifyToken, upload.single("video"), async (req, res) => 
       category,
       whatsapp,
       whatsappClicks: 0,
-      websiteClicks: 0
+      websiteClicks: 0,
+      createdAt: new Date()
     });
 
     await reel.save();
 
-    res.json({
+    return res.json({
       message: "Upload success 🚀",
       videoUrl: result.secure_url
     });
 
   } catch (err) {
-    console.error("UPLOAD ERROR:", err);
-    res.status(500).json({ error: "Upload failed ❌" });
+    console.error("UPLOAD ERROR FULL:", err);
+    return res.status(500).json({
+      error: "Upload failed ❌",
+      details: err.message
+    });
   }
 });
 
@@ -88,49 +100,17 @@ router.post("/upload", verifyToken, upload.single("video"), async (req, res) => 
 router.get("/", async (req, res) => {
   try {
     const { category, city } = req.query;
-    const filter = {};
 
+    let filter = {};
     if (category && category !== "all") filter.category = category;
     if (city) filter.city = city;
 
     const reels = await Reel.find(filter).sort({ createdAt: -1 });
 
     res.json(reels);
-
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to fetch reels ❌" });
-  }
-});
-
-// ================== CLICK TRACKING ==================
-router.post("/click/whatsapp/:id", async (req, res) => {
-  try {
-    const reel = await Reel.findById(req.params.id);
-    if (!reel) return res.status(404).json({ error: "Not found ❌" });
-
-    reel.whatsappClicks = (reel.whatsappClicks || 0) + 1;
-    await reel.save();
-
-    res.json({ success: true });
-
-  } catch (err) {
-    res.status(500).json({ error: "Error ❌" });
-  }
-});
-
-router.post("/click/website/:id", async (req, res) => {
-  try {
-    const reel = await Reel.findById(req.params.id);
-    if (!reel) return res.status(404).json({ error: "Not found ❌" });
-
-    reel.websiteClicks = (reel.websiteClicks || 0) + 1;
-    await reel.save();
-
-    res.json({ success: true });
-
-  } catch (err) {
-    res.status(500).json({ error: "Error ❌" });
+    console.log(err);
+    res.status(500).json({ error: "Fetch failed ❌" });
   }
 });
 

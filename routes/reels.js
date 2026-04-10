@@ -3,7 +3,7 @@ const router = express.Router();
 const Reel = require("../models/Reel");
 const jwt = require("jsonwebtoken");
 
-// UPLOAD REEL
+// ================== UPLOAD REEL ==================
 router.post("/upload", async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
@@ -12,9 +12,12 @@ router.post("/upload", async (req, res) => {
     const token = authHeader.startsWith("Bearer ") ? authHeader.split(" ")[1] : authHeader;
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    const { videoUrl, businessName, website, category } = req.body;
+    // ✅ whatsapp add
+    const { videoUrl, businessName, website, category, whatsapp } = req.body;
 
-    if(!videoUrl || !businessName) return res.status(400).json({ error: "Missing fields ❌" });
+    if(!videoUrl || !businessName){
+      return res.status(400).json({ error: "Missing fields ❌" });
+    }
 
     const newReel = new Reel({
       userId: decoded.id,
@@ -22,7 +25,10 @@ router.post("/upload", async (req, res) => {
       videoUrl,
       businessName,
       website,
-      category
+      category,
+      whatsapp, // ✅ NEW FIELD
+      whatsappClicks: 0, // optional
+      websiteClicks: 0   // optional
     });
 
     await newReel.save();
@@ -34,7 +40,8 @@ router.post("/upload", async (req, res) => {
   }
 });
 
-// GET Reels
+
+// ================== GET REELS ==================
 router.get("/", async (req, res) => {
   try {
     const { category, city } = req.query;
@@ -50,5 +57,38 @@ router.get("/", async (req, res) => {
     res.status(500).json({ error: "Failed to fetch reels ❌" });
   }
 });
+
+
+// ================== WHATSAPP CLICK TRACK ==================
+router.post("/click/whatsapp/:id", async (req,res)=>{
+  try{
+    const reel = await Reel.findById(req.params.id);
+    if(!reel) return res.status(404).json({error:"Not found"});
+
+    reel.whatsappClicks = (reel.whatsappClicks || 0) + 1;
+    await reel.save();
+
+    res.json({success:true});
+  }catch(err){
+    res.status(500).json({error:"Error"});
+  }
+});
+
+
+// ================== WEBSITE CLICK TRACK ==================
+router.post("/click/website/:id", async (req,res)=>{
+  try{
+    const reel = await Reel.findById(req.params.id);
+    if(!reel) return res.status(404).json({error:"Not found"});
+
+    reel.websiteClicks = (reel.websiteClicks || 0) + 1;
+    await reel.save();
+
+    res.json({success:true});
+  }catch(err){
+    res.status(500).json({error:"Error"});
+  }
+});
+
 
 module.exports = router;

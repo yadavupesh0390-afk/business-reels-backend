@@ -7,7 +7,8 @@ const ReelSchema = new mongoose.Schema({
   businessName: { type: String, required: true },
   website: { type: String },                       // Business website
   category: { type: String, default: "all" },
-  createdAt: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now },
+  whatsapp: { type: String, required: false}
 });
 
 module.exports = mongoose.model("Reel", ReelSchema);

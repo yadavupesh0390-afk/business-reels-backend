@@ -59,8 +59,6 @@ router.post("/upload", verifyToken, upload.single("video"), async (req, res) => 
       folder: "reels"
     });
 
-    console.log("CLOUDINARY DONE:", result.secure_url);
-
     // delete temp file
     fs.unlinkSync(req.file.path);
 
@@ -68,18 +66,15 @@ router.post("/upload", verifyToken, upload.single("video"), async (req, res) => 
     const reel = new Reel({
       userId: req.user.id,
 
-      // ✅ FRONTEND CITY (fallback to token)
       city: city || req.user.city || "Unknown",
 
-      // ✅ GEO LOCATION (future use)
-      lat: lat || null,
-      lng: lng || null,
+      lat: lat ? Number(lat) : null,
+      lng: lng ? Number(lng) : null,
 
       videoUrl: result.secure_url,
       businessName,
       website,
 
-      // ✅ WHATSAPP (frontend + fallback)
       whatsapp: whatsapp || "919473549700",
 
       whatsappClicks: 0,
@@ -103,24 +98,69 @@ router.post("/upload", verifyToken, upload.single("video"), async (req, res) => 
   }
 });
 
+// ================== DISTANCE FUNCTION ==================
+function getDistance(lat1, lng1, lat2, lng2) {
+  const R = 6371; // km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+
+  const a =
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) *
+    Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLng/2) * Math.sin(dLng/2);
+
+  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+}
+
 // ================== GET REELS ==================
 router.get("/", async (req, res) => {
   try {
-    const { city } = req.query;
 
-    let filter = {};
+    const { city, lat, lng } = req.query;
 
-    // ✅ ONLY CITY FILTER
-    if (city) {
-      filter.city = city;
+    let reels = await Reel.find();
+
+    // ✅ 1. DISTANCE SORT (BEST EXPERIENCE)
+    if (lat && lng) {
+
+      const userLat = Number(lat);
+      const userLng = Number(lng);
+
+      reels = reels
+        .map(r => {
+          if (r.lat && r.lng) {
+            return {
+              ...r._doc,
+              distance: getDistance(userLat, userLng, r.lat, r.lng)
+            };
+          } else {
+            return {
+              ...r._doc,
+              distance: 9999 // far
+            };
+          }
+        })
+        .sort((a, b) => a.distance - b.distance);
+
     }
 
-    const reels = await Reel.find(filter).sort({ createdAt: -1 });
+    // ✅ 2. CITY FILTER (fallback)
+    else if (city) {
+      reels = reels
+        .filter(r => r.city === city)
+        .sort((a, b) => b.createdAt - a.createdAt);
+    }
+
+    // ✅ 3. DEFAULT (latest)
+    else {
+      reels = reels.sort((a, b) => b.createdAt - a.createdAt);
+    }
 
     res.json(reels);
 
   } catch (err) {
-    console.log(err);
+    console.log("FETCH ERROR:", err);
     res.status(500).json({ error: "Fetch failed ❌" });
   }
 });

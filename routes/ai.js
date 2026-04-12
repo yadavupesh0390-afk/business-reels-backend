@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const multer = require("multer");
 const fs = require("fs");
+const path = require("path");
 const ffmpeg = require("fluent-ffmpeg");
 const ffmpegPath = require("ffmpeg-static");
 const cloudinary = require("../config/cloudinary");
@@ -15,8 +16,8 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-// 🔥 AI CAPTION (REAL AI)
-async function generateCaption(name, type = "business"){
+// 🔥 AI CAPTION
+async function generateCaption(name, type = "business") {
   try {
     const res = await openai.chat.completions.create({
       model: "gpt-4o-mini",
@@ -30,17 +31,19 @@ async function generateCaption(name, type = "business"){
 
     return res.choices[0].message.content;
 
-  } catch {
+  } catch (err) {
+    console.log("Caption error:", err.message);
     return `🔥 Visit ${name} Today\nBest Service 💯`;
   }
 }
 
-// 🎵 RANDOM MUSIC
-function getMusic(){
+// 🎵 RANDOM MUSIC (FIXED FOR RENDER)
+function getMusic() {
   const list = [
-    "music/song1.mp3",
-    "music/song2.mp3"
+    path.join(__dirname, "../music/song1.mp3"),
+    path.join(__dirname, "../music/song2.mp3")
   ];
+
   return list[Math.floor(Math.random() * list.length)];
 }
 
@@ -55,11 +58,11 @@ router.post("/generate-reel", upload.single("image"), async (req, res) => {
     const { businessName = "Your Business", type = "shop" } = req.body;
 
     const imagePath = req.file.path;
-    const outputVideo = `uploads/output-${Date.now()}.mp4`;
+    const outputVideo = path.join(__dirname, `../uploads/output-${Date.now()}.mp4`);
 
     const captionRaw = await generateCaption(businessName, type);
 
-    // 🔥 TEXT SAFE (FFMPEG crash fix)
+    // 🔥 SAFE TEXT FOR FFMPEG
     const caption = captionRaw
       .replace(/:/g, "\\:")
       .replace(/'/g, "\\'")
@@ -67,7 +70,21 @@ router.post("/generate-reel", upload.single("image"), async (req, res) => {
 
     const music = getMusic();
 
-    // 🎬 VIDEO GENERATE
+    // ⚠️ MUSIC CHECK (IMPORTANT)
+    if (!fs.existsSync(music)) {
+      return res.status(500).json({
+        error: "Music file missing ❌"
+      });
+    }
+
+    // ⚠️ IMAGE CHECK
+    if (!fs.existsSync(imagePath)) {
+      return res.status(500).json({
+        error: "Uploaded image missing ❌"
+      });
+    }
+
+    // 🎬 FFmpeg VIDEO GENERATION
     await new Promise((resolve, reject) => {
       ffmpeg()
         .input(imagePath)
@@ -84,7 +101,10 @@ router.post("/generate-reel", upload.single("image"), async (req, res) => {
         ])
         .save(outputVideo)
         .on("end", resolve)
-        .on("error", reject);
+        .on("error", (err) => {
+          console.log("FFMPEG ERROR:", err.message);
+          reject(err);
+        });
     });
 
     // ☁️ CLOUDINARY UPLOAD
@@ -93,19 +113,25 @@ router.post("/generate-reel", upload.single("image"), async (req, res) => {
       folder: "ai-reels"
     });
 
+    if (!result || !result.secure_url) {
+      throw new Error("Cloudinary upload failed ❌");
+    }
+
     // 🧹 CLEANUP
     fs.unlinkSync(imagePath);
     fs.unlinkSync(outputVideo);
 
-    res.json({
+    return res.json({
       message: "🔥 AI Reel Generated",
       videoUrl: result.secure_url,
       caption: captionRaw
     });
 
   } catch (err) {
-    console.log("AI ERROR:", err);
-    res.status(500).json({ error: "AI failed ❌" });
+    console.log("AI ERROR:", err.message);
+    return res.status(500).json({
+      error: err.message || "AI failed ❌"
+    });
   }
 });
 

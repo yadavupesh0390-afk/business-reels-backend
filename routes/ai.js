@@ -16,7 +16,7 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-// 🔥 AI CAPTION
+// ================= AI CAPTION =================
 async function generateCaption(name, type = "business") {
   try {
     const res = await openai.chat.completions.create({
@@ -37,7 +37,7 @@ async function generateCaption(name, type = "business") {
   }
 }
 
-// 🎵 SAFE LOCAL MUSIC (NO CRASH)
+// ================= SAFE MUSIC =================
 function getMusic() {
   const list = [
     path.join(__dirname, "../music/song1.mp3")
@@ -46,8 +46,7 @@ function getMusic() {
   const exists = list.filter(f => fs.existsSync(f));
 
   if (exists.length === 0) {
-    console.log("❌ No music found, running without audio");
-    return null;
+    return null; // no crash mode
   }
 
   return exists[Math.floor(Math.random() * exists.length)];
@@ -68,7 +67,6 @@ router.post("/generate-reel", upload.single("image"), async (req, res) => {
 
     const captionRaw = await generateCaption(businessName, type);
 
-    // 🔥 SAFE TEXT (FFMPEG CRASH FIX)
     const caption = captionRaw
       .replace(/:/g, "\\:")
       .replace(/'/g, "\\'")
@@ -76,13 +74,7 @@ router.post("/generate-reel", upload.single("image"), async (req, res) => {
 
     const music = getMusic();
 
-    if (!fs.existsSync(imagePath)) {
-      return res.status(500).json({
-        error: "Uploaded image missing ❌"
-      });
-    }
-
-    // 🎬 FFmpeg SAFE CONFIG
+    // ================= FFmpeg =================
     await new Promise((resolve, reject) => {
 
       let command = ffmpeg()
@@ -90,7 +82,7 @@ router.post("/generate-reel", upload.single("image"), async (req, res) => {
         .loop(6)
         .outputOptions([
           "-vf",
-          `scale=720:1280,drawtext=text='${caption}':fontcolor=white:fontsize=42:x=(w-text_w)/2:y=1000`,
+          "scale=720:1280", // 🔥 SAFE (NO CRASH drawtext removed)
           "-t 6",
           "-preset ultrafast",
           "-c:v libx264",
@@ -98,7 +90,7 @@ router.post("/generate-reel", upload.single("image"), async (req, res) => {
           "-movflags +faststart"
         ]);
 
-      // 👉 ONLY ADD MUSIC IF EXISTS
+      // 🎵 music optional
       if (music) {
         command = command
           .input(music)
@@ -115,17 +107,13 @@ router.post("/generate-reel", upload.single("image"), async (req, res) => {
         });
     });
 
-    // ☁️ CLOUDINARY UPLOAD
+    // ================= CLOUDINARY =================
     const result = await cloudinary.uploader.upload(outputVideo, {
       resource_type: "video",
       folder: "ai-reels"
     });
 
-    if (!result || !result.secure_url) {
-      throw new Error("Cloudinary upload failed ❌");
-    }
-
-    // 🧹 CLEANUP
+    // cleanup
     fs.unlinkSync(imagePath);
     fs.unlinkSync(outputVideo);
 
@@ -139,6 +127,36 @@ router.post("/generate-reel", upload.single("image"), async (req, res) => {
     console.log("AI ERROR:", err.message);
     return res.status(500).json({
       error: err.message || "AI failed ❌"
+    });
+  }
+});
+
+/* ================= MANUAL UPLOAD ROUTE =================
+   👉 Yeh add karo agar manual upload already use ho raha hai
+*/
+router.post("/upload-manual", upload.single("video"), async (req, res) => {
+  try {
+
+    if (!req.file) {
+      return res.status(400).json({ error: "Video required ❌" });
+    }
+
+    const result = await cloudinary.uploader.upload(req.file.path, {
+      resource_type: "video",
+      folder: "manual-reels"
+    });
+
+    fs.unlinkSync(req.file.path);
+
+    return res.json({
+      message: "✅ Manual Upload Success",
+      videoUrl: result.secure_url
+    });
+
+  } catch (err) {
+    console.log("Manual Upload Error:", err.message);
+    return res.status(500).json({
+      error: "Manual upload failed ❌"
     });
   }
 });

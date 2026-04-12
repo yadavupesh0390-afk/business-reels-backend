@@ -37,15 +37,20 @@ async function generateCaption(name, type = "business") {
   }
 }
 
-// 🎵 ONLINE MUSIC (OPTION 1 - FIXED)
+// 🎵 SAFE LOCAL MUSIC (NO CRASH)
 function getMusic() {
   const list = [
-    "https://cdn.pixabay.com/download/audio/2022/03/15/audio_123.mp3",
-    "https://cdn.pixabay.com/download/audio/2022/03/20/audio_456.mp3",
-    "https://cdn.pixabay.com/download/audio/2022/10/30/audio_789.mp3"
+    path.join(__dirname, "../music/song1.mp3")
   ];
 
-  return list[Math.floor(Math.random() * list.length)];
+  const exists = list.filter(f => fs.existsSync(f));
+
+  if (exists.length === 0) {
+    console.log("❌ No music found, running without audio");
+    return null;
+  }
+
+  return exists[Math.floor(Math.random() * exists.length)];
 }
 
 // ================= AI REEL =================
@@ -63,7 +68,7 @@ router.post("/generate-reel", upload.single("image"), async (req, res) => {
 
     const captionRaw = await generateCaption(businessName, type);
 
-    // 🔥 SAFE TEXT FOR FFMPEG
+    // 🔥 SAFE TEXT (FFMPEG CRASH FIX)
     const caption = captionRaw
       .replace(/:/g, "\\:")
       .replace(/'/g, "\\'")
@@ -71,29 +76,37 @@ router.post("/generate-reel", upload.single("image"), async (req, res) => {
 
     const music = getMusic();
 
-    // ⚠️ IMAGE CHECK
     if (!fs.existsSync(imagePath)) {
       return res.status(500).json({
         error: "Uploaded image missing ❌"
       });
     }
 
-    // 🎬 FFmpeg VIDEO GENERATION
+    // 🎬 FFmpeg SAFE CONFIG
     await new Promise((resolve, reject) => {
-      ffmpeg()
+
+      let command = ffmpeg()
         .input(imagePath)
         .loop(6)
-        .input(music)
-        .inputOptions(["-protocol_whitelist", "file,http,https,tcp,tls"])
         .outputOptions([
           "-vf",
           `scale=720:1280,drawtext=text='${caption}':fontcolor=white:fontsize=42:x=(w-text_w)/2:y=1000`,
           "-t 6",
           "-preset ultrafast",
           "-c:v libx264",
-          "-c:a aac",
-          "-shortest"
-        ])
+          "-pix_fmt yuv420p",
+          "-movflags +faststart"
+        ]);
+
+      // 👉 ONLY ADD MUSIC IF EXISTS
+      if (music) {
+        command = command
+          .input(music)
+          .inputOptions(["-stream_loop", "-1"])
+          .outputOptions(["-c:a aac", "-shortest"]);
+      }
+
+      command
         .save(outputVideo)
         .on("end", resolve)
         .on("error", (err) => {

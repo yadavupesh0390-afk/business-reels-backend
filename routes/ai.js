@@ -5,14 +5,34 @@ const fs = require("fs");
 const ffmpeg = require("fluent-ffmpeg");
 const ffmpegPath = require("ffmpeg-static");
 const cloudinary = require("../config/cloudinary");
+const OpenAI = require("openai");
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
 const upload = multer({ dest: "uploads/" });
 
-// 🔥 AI CAPTION
-function generateCaption(name){
-  return `🔥 Visit ${name} Today | Best Service in Town 💯`;
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
+
+// 🔥 AI CAPTION (REAL AI)
+async function generateCaption(name, type = "business"){
+  try {
+    const res = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "user",
+          content: `Create short viral Instagram reel caption for a ${type} business named ${name}. Add emojis. Max 2 lines.`
+        }
+      ]
+    });
+
+    return res.choices[0].message.content;
+
+  } catch {
+    return `🔥 Visit ${name} Today\nBest Service 💯`;
+  }
 }
 
 // 🎵 RANDOM MUSIC
@@ -32,12 +52,19 @@ router.post("/generate-reel", upload.single("image"), async (req, res) => {
       return res.status(400).json({ error: "Image required ❌" });
     }
 
-    const { businessName = "Your Business" } = req.body;
+    const { businessName = "Your Business", type = "shop" } = req.body;
 
     const imagePath = req.file.path;
     const outputVideo = `uploads/output-${Date.now()}.mp4`;
 
-    const caption = generateCaption(businessName);
+    const captionRaw = await generateCaption(businessName, type);
+
+    // 🔥 TEXT SAFE (FFMPEG crash fix)
+    const caption = captionRaw
+      .replace(/:/g, "\\:")
+      .replace(/'/g, "\\'")
+      .replace(/\n/g, "\\n");
+
     const music = getMusic();
 
     // 🎬 VIDEO GENERATE
@@ -48,8 +75,9 @@ router.post("/generate-reel", upload.single("image"), async (req, res) => {
         .input(music)
         .outputOptions([
           "-vf",
-          `scale=720:1280,drawtext=text='${caption}':fontcolor=white:fontsize=40:x=50:y=1100`,
+          `scale=720:1280,drawtext=text='${caption}':fontcolor=white:fontsize=42:x=(w-text_w)/2:y=1000`,
           "-t 6",
+          "-preset ultrafast",
           "-c:v libx264",
           "-c:a aac",
           "-shortest"
@@ -59,7 +87,7 @@ router.post("/generate-reel", upload.single("image"), async (req, res) => {
         .on("error", reject);
     });
 
-    // ☁️ UPLOAD
+    // ☁️ CLOUDINARY UPLOAD
     const result = await cloudinary.uploader.upload(outputVideo, {
       resource_type: "video",
       folder: "ai-reels"
@@ -72,11 +100,11 @@ router.post("/generate-reel", upload.single("image"), async (req, res) => {
     res.json({
       message: "🔥 AI Reel Generated",
       videoUrl: result.secure_url,
-      caption
+      caption: captionRaw
     });
 
   } catch (err) {
-    console.log(err);
+    console.log("AI ERROR:", err);
     res.status(500).json({ error: "AI failed ❌" });
   }
 });

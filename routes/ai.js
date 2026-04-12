@@ -10,8 +10,16 @@ const OpenAI = require("openai");
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
-const upload = multer({ dest: "uploads/" });
+// ================= SAFETY: ensure uploads folder =================
+const uploadPath = path.join(__dirname, "../uploads");
+if (!fs.existsSync(uploadPath)) {
+  fs.mkdirSync(uploadPath, { recursive: true });
+}
 
+// ================= MULTER =================
+const upload = multer({ dest: uploadPath });
+
+// ================= OPENAI =================
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
@@ -43,11 +51,9 @@ function getMusic() {
     path.join(__dirname, "../music/song1.mp3")
   ];
 
-  const exists = list.filter(f => fs.existsSync(f));
+  const exists = list.filter(f => fs.existsSync(f) && fs.statSync(f).size > 1000);
 
-  if (exists.length === 0) {
-    return null; // no crash mode
-  }
+  if (exists.length === 0) return null;
 
   return exists[Math.floor(Math.random() * exists.length)];
 }
@@ -63,7 +69,7 @@ router.post("/generate-reel", upload.single("image"), async (req, res) => {
     const { businessName = "Your Business", type = "shop" } = req.body;
 
     const imagePath = req.file.path;
-    const outputVideo = path.join(__dirname, `../uploads/output-${Date.now()}.mp4`);
+    const outputVideo = path.join(uploadPath, `output-${Date.now()}.mp4`);
 
     const captionRaw = await generateCaption(businessName, type);
 
@@ -82,15 +88,16 @@ router.post("/generate-reel", upload.single("image"), async (req, res) => {
         .loop(6)
         .outputOptions([
           "-vf",
-          "scale=720:1280", // 🔥 SAFE (NO CRASH drawtext removed)
+          "scale=720:1280",
           "-t 6",
           "-preset ultrafast",
           "-c:v libx264",
           "-pix_fmt yuv420p",
-          "-movflags +faststart"
+          "-movflags +faststart",
+          "-threads", "2"
         ]);
 
-      // 🎵 music optional
+      // 🎵 optional music (SAFE)
       if (music) {
         command = command
           .input(music)
@@ -113,7 +120,7 @@ router.post("/generate-reel", upload.single("image"), async (req, res) => {
       folder: "ai-reels"
     });
 
-    // cleanup
+    // cleanup safely
     fs.unlinkSync(imagePath);
     fs.unlinkSync(outputVideo);
 
@@ -131,9 +138,7 @@ router.post("/generate-reel", upload.single("image"), async (req, res) => {
   }
 });
 
-/* ================= MANUAL UPLOAD ROUTE =================
-   👉 Yeh add karo agar manual upload already use ho raha hai
-*/
+// ================= MANUAL UPLOAD =================
 router.post("/upload-manual", upload.single("video"), async (req, res) => {
   try {
 

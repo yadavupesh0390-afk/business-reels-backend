@@ -3,15 +3,15 @@ const mongoose = require("mongoose");
 const cors = require("cors");
 const fs = require("fs");
 const path = require("path");
+const aiRoutes = require("./routes/ai");
 require("dotenv").config();
-
 const app = express();
 
 // ================== MIDDLEWARE ==================
 app.use(cors());
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
-
+app.use("/ai", aiRoutes);
 // ================== UPLOADS FOLDER (LOCAL BACKUP) ==================
 const uploadPath = path.join(__dirname, "uploads");
 

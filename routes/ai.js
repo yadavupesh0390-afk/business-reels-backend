@@ -37,11 +37,12 @@ async function generateCaption(name, type = "business") {
   }
 }
 
-// 🎵 RANDOM MUSIC (FIXED FOR RENDER)
+// 🎵 ONLINE MUSIC (OPTION 1 - FIXED)
 function getMusic() {
   const list = [
-    path.join(__dirname, "../music/song1.mp3"),
-    path.join(__dirname, "../music/song2.mp3")
+    "https://cdn.pixabay.com/download/audio/2022/03/15/audio_123.mp3",
+    "https://cdn.pixabay.com/download/audio/2022/03/20/audio_456.mp3",
+    "https://cdn.pixabay.com/download/audio/2022/10/30/audio_789.mp3"
   ];
 
   return list[Math.floor(Math.random() * list.length)];
@@ -70,13 +71,6 @@ router.post("/generate-reel", upload.single("image"), async (req, res) => {
 
     const music = getMusic();
 
-    // ⚠️ MUSIC CHECK (IMPORTANT)
-    if (!fs.existsSync(music)) {
-      return res.status(500).json({
-        error: "Music file missing ❌"
-      });
-    }
-
     // ⚠️ IMAGE CHECK
     if (!fs.existsSync(imagePath)) {
       return res.status(500).json({
@@ -90,6 +84,7 @@ router.post("/generate-reel", upload.single("image"), async (req, res) => {
         .input(imagePath)
         .loop(6)
         .input(music)
+        .inputOptions(["-protocol_whitelist", "file,http,https,tcp,tls"])
         .outputOptions([
           "-vf",
           `scale=720:1280,drawtext=text='${caption}':fontcolor=white:fontsize=42:x=(w-text_w)/2:y=1000`,

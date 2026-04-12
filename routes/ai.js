@@ -2,77 +2,77 @@ const express = require("express");
 const router = express.Router();
 const multer = require("multer");
 const fs = require("fs");
-const { exec } = require("child_process");
+const ffmpeg = require("fluent-ffmpeg");
+const ffmpegPath = require("ffmpeg-static");
 const cloudinary = require("../config/cloudinary");
+
+ffmpeg.setFfmpegPath(ffmpegPath);
 
 const upload = multer({ dest: "uploads/" });
 
-// 🔥 SIMPLE AI CAPTION (later upgrade karenge)
-function generateCaption(businessType, businessName) {
-
-  const captions = {
-    salon: `💇‍♂️ Stylish Look @ ${businessName} 🔥 Visit Today!`,
-    gym: `💪 Transform Yourself @ ${businessName} 🚀 Join Now!`,
-    shop: `🛍 Amazing Deals @ ${businessName} 🔥 Hurry Up!`,
-    default: `🔥 Visit ${businessName} Today!`
-  };
-
-  return captions[businessType] || captions.default;
+// 🔥 AI CAPTION
+function generateCaption(name){
+  return `🔥 Visit ${name} Today | Best Service in Town 💯`;
 }
 
-// 🔥 MUSIC AUTO SELECT
-function getMusic(businessType){
-  if(businessType === "gym") return "music/gym.mp3";
-  if(businessType === "salon") return "music/salon.mp3";
-  return "music/default.mp3";
+// 🎵 RANDOM MUSIC
+function getMusic(){
+  const list = [
+    "music/song1.mp3",
+    "music/song2.mp3"
+  ];
+  return list[Math.floor(Math.random() * list.length)];
 }
 
 // ================= AI REEL =================
 router.post("/generate-reel", upload.single("image"), async (req, res) => {
   try {
 
-    const { businessType, businessName } = req.body;
-
     if (!req.file) {
       return res.status(400).json({ error: "Image required ❌" });
     }
 
-    const inputImage = req.file.path;
+    const { businessName = "Your Business" } = req.body;
+
+    const imagePath = req.file.path;
     const outputVideo = `uploads/output-${Date.now()}.mp4`;
 
-    const caption = generateCaption(businessType, businessName);
-    const music = getMusic(businessType);
+    const caption = generateCaption(businessName);
+    const music = getMusic();
 
-    // 🔥 FFmpeg COMMAND
-    const command = `
-    ffmpeg -loop 1 -i ${inputImage} -i ${music} \
-    -vf "scale=720:1280,drawtext=text='${caption}':fontcolor=white:fontsize=40:x=50:y=1100" \
-    -t 5 -c:v libx264 -c:a aac -shortest ${outputVideo}
-    `;
+    // 🎬 VIDEO GENERATE
+    await new Promise((resolve, reject) => {
+      ffmpeg()
+        .input(imagePath)
+        .loop(6)
+        .input(music)
+        .outputOptions([
+          "-vf",
+          `scale=720:1280,drawtext=text='${caption}':fontcolor=white:fontsize=40:x=50:y=1100`,
+          "-t 6",
+          "-c:v libx264",
+          "-c:a aac",
+          "-shortest"
+        ])
+        .save(outputVideo)
+        .on("end", resolve)
+        .on("error", reject);
+    });
 
-    exec(command, async (err) => {
+    // ☁️ UPLOAD
+    const result = await cloudinary.uploader.upload(outputVideo, {
+      resource_type: "video",
+      folder: "ai-reels"
+    });
 
-      if (err) {
-        console.log(err);
-        return res.status(500).json({ error: "Video generation failed ❌" });
-      }
+    // 🧹 CLEANUP
+    fs.unlinkSync(imagePath);
+    fs.unlinkSync(outputVideo);
 
-      // ☁️ Upload
-      const result = await cloudinary.uploader.upload(outputVideo, {
-        resource_type: "video",
-        folder: "ai-reels"
-      });
-
-      // 🧹 cleanup
-      fs.unlinkSync(inputImage);
-      fs.unlinkSync(outputVideo);
-
-      res.json({
-        message: "AI Reel Generated 🚀",
-        videoUrl: result.secure_url,
-        caption
-      });
-
+    res.json({
+      message: "🔥 AI Reel Generated",
+      videoUrl: result.secure_url,
+      caption
     });
 
   } catch (err) {

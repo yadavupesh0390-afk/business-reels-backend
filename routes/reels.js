@@ -38,7 +38,7 @@ const verifyToken = (req, res, next) => {
   }
 };
 
-// ================== UPLOAD REEL ==================
+// ================== UPLOAD REEL (FILE) ==================
 router.post("/upload", verifyToken, upload.single("video"), async (req, res) => {
   try {
     console.log("👉 HIT /upload");
@@ -59,24 +59,21 @@ router.post("/upload", verifyToken, upload.single("video"), async (req, res) => 
       folder: "reels"
     });
 
-    // delete temp file
-    fs.unlinkSync(req.file.path);
+    // delete temp file safely
+    if (fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
 
     // ================== SAVE DB ==================
     const reel = new Reel({
       userId: req.user.id,
-
       city: city || req.user.city || "Unknown",
-
       lat: lat ? Number(lat) : null,
       lng: lng ? Number(lng) : null,
-
       videoUrl: result.secure_url,
       businessName,
       website,
-
       whatsapp: whatsapp || "919473549700",
-
       whatsappClicks: 0,
       websiteClicks: 0,
       createdAt: new Date()
@@ -98,9 +95,55 @@ router.post("/upload", verifyToken, upload.single("video"), async (req, res) => 
   }
 });
 
+// ================== UPLOAD VIA URL (AI REELS) ==================
+router.post("/upload-url", verifyToken, async (req, res) => {
+  try {
+    console.log("👉 HIT /upload-url");
+
+    const { videoUrl, businessName, website, whatsapp, city, lat, lng } = req.body;
+
+    if (!videoUrl) {
+      return res.status(400).json({ error: "Video URL required ❌" });
+    }
+
+    if (!businessName) {
+      return res.status(400).json({ error: "Business name required ❌" });
+    }
+
+    // ================== SAVE DB ==================
+    const reel = new Reel({
+      userId: req.user.id,
+      city: city || req.user.city || "Unknown",
+      lat: lat ? Number(lat) : null,
+      lng: lng ? Number(lng) : null,
+      videoUrl,
+      businessName,
+      website,
+      whatsapp: whatsapp || "919473549700",
+      whatsappClicks: 0,
+      websiteClicks: 0,
+      createdAt: new Date()
+    });
+
+    await reel.save();
+
+    return res.json({
+      message: "✅ Reel saved (AI)",
+      videoUrl
+    });
+
+  } catch (err) {
+    console.error("UPLOAD URL ERROR:", err);
+    return res.status(500).json({
+      error: "Upload failed ❌",
+      details: err.message
+    });
+  }
+});
+
 // ================== DISTANCE FUNCTION ==================
 function getDistance(lat1, lng1, lat2, lng2) {
-  const R = 6371; // km
+  const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLng = (lng2 - lng1) * Math.PI / 180;
 
@@ -121,38 +164,26 @@ router.get("/", async (req, res) => {
 
     let reels = await Reel.find();
 
-    // ✅ 1. DISTANCE SORT (BEST EXPERIENCE)
     if (lat && lng) {
-
       const userLat = Number(lat);
       const userLng = Number(lng);
 
       reels = reels
-        .map(r => {
-          if (r.lat && r.lng) {
-            return {
-              ...r._doc,
-              distance: getDistance(userLat, userLng, r.lat, r.lng)
-            };
-          } else {
-            return {
-              ...r._doc,
-              distance: 9999 // far
-            };
-          }
-        })
+        .map(r => ({
+          ...r._doc,
+          distance: (r.lat && r.lng)
+            ? getDistance(userLat, userLng, r.lat, r.lng)
+            : 9999
+        }))
         .sort((a, b) => a.distance - b.distance);
-
     }
 
-    // ✅ 2. CITY FILTER (fallback)
     else if (city) {
       reels = reels
         .filter(r => r.city === city)
         .sort((a, b) => b.createdAt - a.createdAt);
     }
 
-    // ✅ 3. DEFAULT (latest)
     else {
       reels = reels.sort((a, b) => b.createdAt - a.createdAt);
     }

@@ -10,16 +10,8 @@ const OpenAI = require("openai");
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
-// ================= SAFETY: ensure uploads folder =================
-const uploadPath = path.join(__dirname, "../uploads");
-if (!fs.existsSync(uploadPath)) {
-  fs.mkdirSync(uploadPath, { recursive: true });
-}
+const upload = multer({ dest: "uploads/" });
 
-// ================= MULTER =================
-const upload = multer({ dest: uploadPath });
-
-// ================= OPENAI =================
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
@@ -47,15 +39,17 @@ async function generateCaption(name, type = "business") {
 
 // ================= SAFE MUSIC =================
 function getMusic() {
-  const list = [
-    path.join(__dirname, "../music/song1.mp3")
-  ];
+  try {
+    const musicPath = path.join(process.cwd(), "music/song1.mp3");
 
-  const exists = list.filter(f => fs.existsSync(f) && fs.statSync(f).size > 1000);
+    if (!fs.existsSync(musicPath)) {
+      return null;
+    }
 
-  if (exists.length === 0) return null;
-
-  return exists[Math.floor(Math.random() * exists.length)];
+    return musicPath;
+  } catch {
+    return null;
+  }
 }
 
 // ================= AI REEL =================
@@ -69,7 +63,7 @@ router.post("/generate-reel", upload.single("image"), async (req, res) => {
     const { businessName = "Your Business", type = "shop" } = req.body;
 
     const imagePath = req.file.path;
-    const outputVideo = path.join(uploadPath, `output-${Date.now()}.mp4`);
+    const outputVideo = path.join(__dirname, `../uploads/output-${Date.now()}.mp4`);
 
     const captionRaw = await generateCaption(businessName, type);
 
@@ -80,7 +74,6 @@ router.post("/generate-reel", upload.single("image"), async (req, res) => {
 
     const music = getMusic();
 
-    // ================= FFmpeg =================
     await new Promise((resolve, reject) => {
 
       let command = ffmpeg()
@@ -88,20 +81,82 @@ router.post("/generate-reel", upload.single("image"), async (req, res) => {
         .loop(6)
         .outputOptions([
           "-vf",
-          "scale=720:1280",
+          "scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2",
           "-t 6",
           "-preset ultrafast",
           "-c:v libx264",
           "-pix_fmt yuv420p",
-          "-movflags +faststart",
-          "-threads", "2"
+          "-movflags +faststart"
         ]);
 
-      // 🎵 optional music (SAFE)
+      // 🎵 optional music
       if (music) {
         command = command
           .input(music)
           .inputOptions(["-stream_loop", "-1"])
+          .outputOptions(["-c:a aac", "-shortest"]);
+      }
+
+      command
+        .save(outputVideo)
+        .on("end", resolve)
+        .on("error", (err) => {
+          console.log("FFMPEG ERROR:", err.message);
+          reject(err);
+        });
+    });
+
+    const result = await cloudinary.uploader.upload(outputVideo, {
+      resource_type: "video",
+      folder: "ai-reels"
+    });
+
+    fs.unlinkSync(imagePath);
+    fs.unlinkSync(outputVideo);
+
+    return res.json({
+      message: "🔥 AI Reel Generated",
+      videoUrl: result.secure_url,
+      caption: captionRaw
+    });
+
+  } catch (err) {
+    console.log("AI ERROR:", err.message);
+    return res.status(500).json({
+      error: err.message || "AI failed ❌"
+    });
+  }
+});
+
+// ================= MANUAL UPLOAD =================
+router.post("/upload-manual", upload.single("video"), async (req, res) => {
+  try {
+
+    if (!req.file) {
+      return res.status(400).json({ error: "Video required ❌" });
+    }
+
+    const result = await cloudinary.uploader.upload(req.file.path, {
+      resource_type: "video",
+      folder: "manual-reels"
+    });
+
+    fs.unlinkSync(req.file.path);
+
+    return res.json({
+      message: "✅ Manual Upload Success",
+      videoUrl: result.secure_url
+    });
+
+  } catch (err) {
+    console.log("Manual Upload Error:", err.message);
+    return res.status(500).json({
+      error: "Manual upload failed ❌"
+    });
+  }
+});
+
+module.exports = router;          .inputOptions(["-stream_loop", "-1"])
           .outputOptions(["-c:a aac", "-shortest"]);
       }
 

@@ -3,6 +3,7 @@ const router = express.Router();
 const multer = require("multer");
 const fs = require("fs");
 const Reel = require("../models/Reel");
+const Music = require("../models/Music");
 const jwt = require("jsonwebtoken");
 const cloudinary = require("../config/cloudinary");
 
@@ -33,15 +34,15 @@ const verifyToken = (req, res, next) => {
     next();
 
   } catch (err) {
-    console.log("JWT ERROR:", err.message);
     return res.status(401).json({ error: "Invalid token ❌" });
   }
 };
 
-// ================== UPLOAD REEL (FILE) ==================
+//
+// ================== REEL UPLOAD ==================
+//
 router.post("/upload", verifyToken, upload.single("video"), async (req, res) => {
   try {
-    console.log("👉 HIT /upload");
 
     if (!req.file) {
       return res.status(400).json({ error: "Video missing ❌" });
@@ -53,95 +54,122 @@ router.post("/upload", verifyToken, upload.single("video"), async (req, res) => 
       return res.status(400).json({ error: "Business name required ❌" });
     }
 
-    // ================== CLOUDINARY ==================
     const result = await cloudinary.uploader.upload(req.file.path, {
       resource_type: "video",
       folder: "reels"
     });
 
-    // delete temp file safely
     if (fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path);
     }
 
-    // ================== SAVE DB ==================
     const reel = new Reel({
       userId: req.user.id,
-      city: city || req.user.city || "Unknown",
+      city: city || "Unknown",
       lat: lat ? Number(lat) : null,
       lng: lng ? Number(lng) : null,
       videoUrl: result.secure_url,
       businessName,
       website,
       whatsapp: whatsapp || "919473549700",
-      whatsappClicks: 0,
-      websiteClicks: 0,
       createdAt: new Date()
     });
 
     await reel.save();
 
-    return res.json({
+    res.json({
       message: "Upload success 🚀",
       videoUrl: result.secure_url
     });
 
   } catch (err) {
-    console.error("UPLOAD ERROR:", err);
-    return res.status(500).json({
-      error: "Upload failed ❌",
-      details: err.message
-    });
+    res.status(500).json({ error: "Upload failed ❌", details: err.message });
   }
 });
 
-// ================== UPLOAD VIA URL (AI REELS) ==================
+//
+// ================== AI / URL UPLOAD ==================
+//
 router.post("/upload-url", verifyToken, async (req, res) => {
   try {
-    console.log("👉 HIT /upload-url");
 
     const { videoUrl, businessName, website, whatsapp, city, lat, lng } = req.body;
 
-    if (!videoUrl) {
-      return res.status(400).json({ error: "Video URL required ❌" });
+    if (!videoUrl || !businessName) {
+      return res.status(400).json({ error: "Missing fields ❌" });
     }
 
-    if (!businessName) {
-      return res.status(400).json({ error: "Business name required ❌" });
-    }
-
-    // ================== SAVE DB ==================
     const reel = new Reel({
       userId: req.user.id,
-      city: city || req.user.city || "Unknown",
+      city: city || "Unknown",
       lat: lat ? Number(lat) : null,
       lng: lng ? Number(lng) : null,
       videoUrl,
       businessName,
       website,
       whatsapp: whatsapp || "919473549700",
-      whatsappClicks: 0,
-      websiteClicks: 0,
       createdAt: new Date()
     });
 
     await reel.save();
 
-    return res.json({
-      message: "✅ Reel saved (AI)",
+    res.json({
+      message: "AI Reel saved ✅",
       videoUrl
     });
 
   } catch (err) {
-    console.error("UPLOAD URL ERROR:", err);
-    return res.status(500).json({
-      error: "Upload failed ❌",
-      details: err.message
-    });
+    res.status(500).json({ error: "Upload failed ❌" });
   }
 });
 
-// ================== DISTANCE FUNCTION ==================
+//
+// ================== MUSIC ADD (ADMIN) ==================
+//
+router.post("/music/add", async (req, res) => {
+  try {
+
+    const { name, url } = req.body;
+
+    if (!name || !url) {
+      return res.status(400).json({ error: "Name & URL required ❌" });
+    }
+
+    const music = new Music({
+      name,
+      url
+    });
+
+    await music.save();
+
+    res.json({
+      message: "Music added ✅",
+      music
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: "Music add failed ❌" });
+  }
+});
+
+//
+// ================== GET MUSIC (FRONTEND) ==================
+//
+router.get("/music", async (req, res) => {
+  try {
+
+    const music = await Music.find().sort({ createdAt: -1 });
+
+    res.json(music);
+
+  } catch (err) {
+    res.status(500).json({ error: "Music fetch failed ❌" });
+  }
+});
+
+//
+// ================== GET REELS ==================
+//
 function getDistance(lat1, lng1, lat2, lng2) {
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -156,7 +184,6 @@ function getDistance(lat1, lng1, lat2, lng2) {
   return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
 }
 
-// ================== GET REELS ==================
 router.get("/", async (req, res) => {
   try {
 
@@ -165,23 +192,18 @@ router.get("/", async (req, res) => {
     let reels = await Reel.find();
 
     if (lat && lng) {
-      const userLat = Number(lat);
-      const userLng = Number(lng);
-
       reels = reels
         .map(r => ({
           ...r._doc,
           distance: (r.lat && r.lng)
-            ? getDistance(userLat, userLng, r.lat, r.lng)
+            ? getDistance(lat, lng, r.lat, r.lng)
             : 9999
         }))
         .sort((a, b) => a.distance - b.distance);
     }
 
     else if (city) {
-      reels = reels
-        .filter(r => r.city === city)
-        .sort((a, b) => b.createdAt - a.createdAt);
+      reels = reels.filter(r => r.city === city);
     }
 
     else {
@@ -191,7 +213,6 @@ router.get("/", async (req, res) => {
     res.json(reels);
 
   } catch (err) {
-    console.log("FETCH ERROR:", err);
     res.status(500).json({ error: "Fetch failed ❌" });
   }
 });

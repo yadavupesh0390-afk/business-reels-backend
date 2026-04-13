@@ -9,14 +9,16 @@ const cloudinary = require("../config/cloudinary");
 const upload = multer({
   dest: "uploads/",
   limits: {
-    fileSize: 100 * 1024 * 1024
+    fileSize: 100 * 1024 * 1024 // 100MB
   }
 });
 
 // ================== UPLOAD ==================
 router.post("/upload", upload.single("video"), async (req, res) => {
+
   try {
 
+    // 🔴 CHECK FILE
     if (!req.file) {
       return res.status(400).json({ error: "Video missing ❌" });
     }
@@ -30,23 +32,38 @@ router.post("/upload", upload.single("video"), async (req, res) => {
       lng
     } = req.body;
 
-    // ✅ REQUIRED ONLY BUSINESS NAME
+    // 🔴 REQUIRED FIELD
     if (!businessName) {
       return res.status(400).json({ error: "Business name required ❌" });
     }
 
-    // 🔥 Upload to Cloudinary
-    const result = await cloudinary.uploader.upload(req.file.path, {
-      resource_type: "video",
-      folder: "reels"
-    });
+    // 🔥 CLOUDINARY UPLOAD
+    let result;
 
-    // 🔥 Delete temp file
-    if (fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
+    try {
+      result = await cloudinary.uploader.upload(req.file.path, {
+        resource_type: "video",
+        folder: "reels"
+      });
+    } catch (cloudErr) {
+      console.log("❌ Cloudinary Error:", cloudErr);
+
+      return res.status(500).json({
+        error: "Cloudinary upload failed ❌",
+        details: cloudErr.message
+      });
     }
 
-    // 🔥 Save in DB
+    // 🔥 DELETE TEMP FILE (SAFE)
+    try {
+      if (fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+    } catch (delErr) {
+      console.log("⚠️ File delete issue:", delErr);
+    }
+
+    // 🔥 SAVE DB
     const reel = new Reel({
       businessName,
       website: website || "",
@@ -60,12 +77,16 @@ router.post("/upload", upload.single("video"), async (req, res) => {
 
     await reel.save();
 
+    // ✅ SUCCESS RESPONSE
     res.json({
       message: "Upload success 🚀",
       videoUrl: result.secure_url
     });
 
   } catch (err) {
+
+    console.log("❌ SERVER ERROR:", err);
+
     res.status(500).json({
       error: "Upload failed ❌",
       details: err.message
@@ -76,6 +97,7 @@ router.post("/upload", upload.single("video"), async (req, res) => {
 // ================== GET REELS ==================
 function getDistance(lat1, lng1, lat2, lng2) {
   const R = 6371;
+
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLng = (lng2 - lng1) * Math.PI / 180;
 
@@ -117,6 +139,7 @@ router.get("/", async (req, res) => {
     res.json(reels);
 
   } catch (err) {
+    console.log("❌ FETCH ERROR:", err);
     res.status(500).json({ error: "Fetch failed ❌" });
   }
 });

@@ -65,15 +65,16 @@ router.post("/upload", upload.single("video"), async (req, res) => {
 
     // 🔥 SAVE DB
     const reel = new Reel({
-      businessName,
-      website: website || "",
-      whatsapp: whatsapp || "",
-      city: city || "Unknown",
-      lat: lat ? Number(lat) : null,
-      lng: lng ? Number(lng) : null,
-      videoUrl: result.secure_url,
-      createdAt: new Date()
-    });
+  userId: "guest",   // 🔥 ADD THIS LINE
+  businessName,
+  website: website || "",
+  whatsapp: whatsapp || "",
+  city: city || "Unknown",
+  lat: lat ? Number(lat) : null,
+  lng: lng ? Number(lng) : null,
+  videoUrl: result.secure_url,
+  createdAt: new Date()
+});
 
     await reel.save();
 
